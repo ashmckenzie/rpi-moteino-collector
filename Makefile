@@ -11,6 +11,11 @@ test:
 
 all: deps test build
 
+install: all _install
+
+_install:
+	go install
+
 build:
 	go build -o rpi-moteino-collector
 
