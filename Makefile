@@ -1,26 +1,32 @@
-.PHONY: all clean
-.DEFAULT_GOAL := all
+SOURCEDIR="."
+SOURCES := $(shell find $(SOURCEDIR) -name '*.go')
 
-DEBUG ?= false
+BINARY=rpi_moteino_collector
+BINARY_RELEASE=bin/${BINARY}_${VERSION}
 
+VERSION=$(shell cat VERSION)
+
+.DEFAULT_GOAL: $(BINARY)
+
+$(BINARY): $(SOURCES) deps bin_dir
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -a -installsuffix cgo -o ${BINARY_RELEASE}_linux_arm
+
+.PHONY: deps
 deps:
 	go get ./...
 
-test:
-	go test
+.PHONY: update_deps
+update_deps:
+	go get -u ./...
 
-all: deps test build
+.PHONY: bin_dir
+bin_dir:
+	mkdir -p bin
 
-install: all _install
-
-_install:
-	go install
-
-build:
-	go build -o rpi-moteino-collector
-
-clean:
-	rm -f rpi-moteino-collector
-
+.PHONY: run
 run:
-	sudo DEBUG="$(DEBUG)" GOPATH=/home/ash/go /usr/local/go/bin/go run main.go $(filter-out $@, $(MAKECMDGOALS))
+	go run main.go
+
+.PHONY: clean
+clean:
+	rm -f ${BINARY} ${BINARY}_*
