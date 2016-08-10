@@ -1,32 +1,13 @@
-SOURCEDIR="."
-SOURCES := $(shell find $(SOURCEDIR) -name '*.go')
+RELEASES_DIR=$(realpath -e ${PWD})/releases
 
-BINARY=rpi_moteino_collector
-BINARY_RELEASE=bin/${BINARY}_${VERSION}
+build:
+	docker build -t moteino-collector:latest .
 
-VERSION=$(shell cat VERSION)
+releases: build
+	docker run --rm -v ${RELEASES_DIR}:/out moteino-collector:latest rsync -ax bin/ /out/
 
-.DEFAULT_GOAL: $(BINARY)
+run: build
+	docker run --rm -ti moteino-collector:latest
 
-$(BINARY): $(SOURCES) deps bin_dir
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -a -installsuffix cgo -o ${BINARY_RELEASE}_linux_arm
-
-.PHONY: deps
-deps:
-	go get ./...
-
-.PHONY: update_deps
-update_deps:
-	go get -u ./...
-
-.PHONY: bin_dir
-bin_dir:
-	mkdir -p bin
-
-.PHONY: run
-run: deps
-	go run main.go $(filter-out $@, $(MAKECMDGOALS))
-
-.PHONY: clean
-clean:
-	rm -f ${BINARY} ${BINARY}_*
+shell: build
+	docker run --rm -ti moteino-collector:latest bash

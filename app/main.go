@@ -12,7 +12,7 @@ import (
   "time"
 
   // "github.com/davecgh/go-spew/spew"
-  "github.com/tarm/goserial"
+  "github.com/tarm/serial"
   "github.com/urfave/cli"
   "menteslibres.net/gosexy/redis"
 )
@@ -88,9 +88,8 @@ func (s SerialReader) processSerialData(redisConnection *redis.Client) {
 }
 
 func validateSerialDevice(device string) (bool) {
-  if _, err := os.Stat(device); os.IsNotExist(err) {
-    log.Fatalf("FATAL main() serial device '%s' is invalid: %s", device, err)
-  }
+  if len(device) == 0 { log.Fatalf("FATAL main() serial device is not defined") }
+  if _, err := os.Stat(device); os.IsNotExist(err) { log.Fatalf("FATAL main() serial device '%s' is invalid: %s", device, err) }
 
   return false
 }
