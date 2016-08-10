@@ -24,8 +24,8 @@ bin_dir:
 	mkdir -p bin
 
 .PHONY: run
-run:
-	go run main.go
+run: deps
+	go run main.go $(filter-out $@, $(MAKECMDGOALS))
 
 .PHONY: clean
 clean:

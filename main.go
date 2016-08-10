@@ -5,39 +5,38 @@ import (
   "bufio"
   "log"
   "fmt"
+  "os"
   "regexp"
+  "strconv"
   "strings"
   "time"
 
+  // "github.com/davecgh/go-spew/spew"
   "github.com/tarm/goserial"
+  "github.com/urfave/cli"
   "menteslibres.net/gosexy/redis"
 )
 
-var redisHost = "127.0.0.1"
-var redisPort = uint(6379)
-
-var serialPort = "/dev/ttyAMA0"
-var serialBaudRate = 115200
-
 type SerialReader struct {
-  DeviceName  string
-  BaudRate    int
+  Device    string
+  BaudRate  uint
 }
 
 type RedisConnection struct {
-  Host    string
-  Port    uint
+  Host  string
+  Port  uint
 }
 
 func (r RedisConnection) client() *redis.Client {
   rc := redis.New()
-  rc.ConnectNonBlock(redisHost, redisPort)
+  err := rc.ConnectNonBlock(r.Host, r.Port)
+  if err != nil { log.Fatalf("FATAL RedisConnection.client(): %s", err) }
 
   return rc
 }
 
 func (s SerialReader) newSerialConnection() io.ReadWriteCloser {
-  serialConfig := &serial.Config{ Name: s.DeviceName, Baud: s.BaudRate }
+  serialConfig := &serial.Config{ Name: s.Device, Baud: int(s.BaudRate) }
   serialPort, err := serial.OpenPort(serialConfig)
   if err != nil { log.Fatalf("FATAL newSerialConnection(): %s", err) }
 
@@ -53,7 +52,7 @@ func (s SerialReader) processSerialData(redisConnection *redis.Client) {
     reply, err := reader.ReadBytes('\n')
 
     if err != nil {
-      log.Printf("FATAL processSerialData() #1: %s", err)
+      log.Printf("processSerialData() #1: %s", err)
       continue
     }
 
@@ -74,26 +73,73 @@ func (s SerialReader) processSerialData(redisConnection *redis.Client) {
 
       if len(metric_key_and_value) != 2 { continue }
 
-      value := fmt.Sprintf("%s,%d,%s", metric_key_and_value[0], int64(time.Now().Unix()), metric_key_and_value[1])
+      value := fmt.Sprintf("%s,%d,%s", metric_key_and_value[0], uint64(time.Now().Unix()), metric_key_and_value[1])
 
       _, err := redisConnection.LPush(channel, value)
-      if err != nil { log.Printf("FATAL processSerialData() #2: %s", err) }
+      if err != nil { log.Printf("processSerialData() #2: %s", err) }
 
       _, err = redisConnection.Publish(channel, value)
-      if err != nil { log.Printf("FATAL processSerialData() #3: %s", err) }
+      if err != nil { log.Printf("processSerialData() #3: %s", err) }
     }
 
     _, err = redisConnection.LTrim(channel, 0, 10)
-    if err != nil { log.Printf("FATAL processSerialData() #4: %s", err) }
+    if err != nil { log.Printf("processSerialData() #4: %s", err) }
   }
 }
 
-func main() {
-  log.Print("Waiting for data...")
+func validateSerialDevice(device string) (bool) {
+  if _, err := os.Stat(device); os.IsNotExist(err) {
+    log.Fatalf("FATAL main() serial device '%s' is invalid: %s", device, err)
+  }
 
-  redisConnection := RedisConnection{ Host: redisHost, Port: redisPort }
-  serialReader := SerialReader{ DeviceName: serialPort, BaudRate: serialBaudRate }
-
-  serialReader.processSerialData(redisConnection.client())
+  return false
 }
 
+func main() {
+  app := cli.NewApp()
+  app.Name = "moteino-collector"
+  app.Usage = "Moteino Collector"
+  app.Version = "0.1.0"
+
+  app.Flags = []cli.Flag {
+    cli.StringFlag{
+      Name: "redis-host",
+      Usage: "redis host:port to consume from",
+      Value: "127.0.0.1:6379",
+      EnvVar: "REDIS_HOST",
+    },
+    cli.StringFlag{
+      Name: "serial-device",
+      Usage: "serial device to connect to",
+      EnvVar: "SERIAL_DEVICE",
+    },
+    cli.UintFlag{
+      Name: "serial-speed",
+      Usage: "speed to use with serial port",
+      Value: 115200,
+      EnvVar: "SERIAL_SPEED",
+    },
+  }
+
+  app.Action = func(c *cli.Context) {
+    log.Print("Waiting for data...")
+
+    // /dev/tty.usbserial-A50285BI
+
+    s := strings.Split(c.String("redis-host"), ":")
+    redisHost := s[0]
+    redisPort, _ := strconv.ParseUint(s[1], 10, 64)
+
+    serialDevice := c.String("serial-device")
+    serialSpeed := c.Uint("serial-speed")
+
+    validateSerialDevice(serialDevice)
+
+    redisConnection := RedisConnection{ Host: redisHost, Port: uint(redisPort) }
+    serialReader    := SerialReader{ Device: serialDevice, BaudRate: serialSpeed }
+
+    serialReader.processSerialData(redisConnection.client())
+  }
+
+  app.Run(os.Args)
+}
